@@ -9,11 +9,15 @@ bandpassFilterFlag = true; %false;
 plotFilteredFlag = true; %false;
 signalAnalyzerFlag = false; %true;
 eeglabFlag = false; %true;
-crossCorrFlag = true; %false;
+crossCorrFlag = false; %true;
+phaseAnalysisFlag = true; %false;
 
 %% Hard coded parameters
-lowpassNpoles = 8;                   	% order of the ButterWorth filter
-
+nPoles = 4;                   	% order of the ButterWorth filter
+troughThreshold = -0.05;        % trough threshold in mV for theta 
+                                %   waveforms
+spikeThreshold = 0.05;          % spike threshold in mV for high frequency
+                                %   oscillations
 channelsOfInterest = [13, 15, 17, 19];
 % lowCutoffs = [0.5, 4, 8, 14, 30];
 % highCutoffs = [3, 7, 13, 30, 80];
@@ -23,9 +27,9 @@ channelsOfInterest = [13, 15, 17, 19];
 % lowCutoffs = [0, 0.1, 0.2, 0.3, 0.4] * samplingRate;
 % highCutoffs = [0.1, 0.2, 0.3, 0.4, 0.5] * samplingRate;
 % bandName = {'band1', 'band2', 'band3', 'band4', 'band5'};
-lowCutoffs = [0,300];
-highCutoffs = [80,4000];
-bandName = {'0to80','300to4000'};
+lowCutoffs = [4, 0, 300];
+highCutoffs = [10, 80, 4000];
+bandName = {'4to10', '0to80','300to4000'};
 
 %% Construct paths
 parentDir = 'C:\Users\Pinn Analysis\Desktop\Shinnosuke';
@@ -167,8 +171,7 @@ if bandpassFilterFlag
         fileSuffices{iBand} = ['_', bandName{iBand}, '_band'];
         figTitles{iBand} = ['Data filtered ', ...
                             num2str(lowCutoffs(iBand)), ...
-                            '~', num2str(highCutoffs(iBand)), ...
-                            ' Hz (', bandName{iBand}, ' band)'];
+                            '~', num2str(highCutoffs(iBand)), ' Hz'];
     end
 
     % Preallocate bandpass-filtered data in a cell array
@@ -176,7 +179,7 @@ if bandpassFilterFlag
 
     % Filter the data with a zero-phase bandpass Butterworth filter
     %   with 3 dB cutoff frequencies [lowCutoff, highCutoff]
-    %   and order lowpassNpoles each way (or 2*lowpassNpoles in total)
+    %   and order nPoles each way (or 2*nPoles in total)
     for iBand = 1:nBands
         % Get the current bandpass cutoffs
         lowCutoff = lowCutoffs(iBand);
@@ -192,15 +195,15 @@ if bandpassFilterFlag
         if lowCutoff <= 0
             Wn = highCutoff * 2 * si;
             [numeratorCoeff, denominatorCoeff] = ...
-                butter(lowpassNpoles, Wn, 'low');
+                butter(nPoles, Wn, 'low');
         elseif highCutoff >= samplingRate / 2
             Wn = lowCutoff * 2 * si;
             [numeratorCoeff, denominatorCoeff] = ...
-                butter(lowpassNpoles, Wn, 'high');
+                butter(nPoles, Wn, 'high');
         else
             Wn = [lowCutoff, highCutoff] * 2 * si;
             [numeratorCoeff, denominatorCoeff] = ...
-                butter(lowpassNpoles, Wn, 'bandpass');
+                butter(nPoles, Wn, 'bandpass');
         end
 
         % Check the order of the filter
@@ -211,11 +214,36 @@ if bandpassFilterFlag
                     orderFilter);
         end
 
+        % Visualize the filter
+        % fvtool(numeratorCoeff, denominatorCoeff);
+        
         % Bandpass-filter data twice (forward & reverse directions)
-        dataFiltered{iBand} = filtfilt(numeratorCoeff, ...
-                                        denominatorCoeff, dataRaw);
+        dataFilteredThis = filtfilt(numeratorCoeff, ...
+                                    denominatorCoeff, dataRaw);
+
+        % If that fails, bandpass-filter data only once (forward direction)
+        if any(isnan(dataFilteredThis))
+            dataFilteredThis = filter(numeratorCoeff, ...
+                                   	  denominatorCoeff, dataRaw);
+            fprintf(['%s is band-pass filtered only', ...
+                     ' in one direction!\n\n'], bandName{iBand});
+        end
+
+        % If that still fails, use Xin's method
+        if any(isnan(dataFilteredThis))
+            filtObj = myfiltObj([lowCutoff, highCutoff], ...
+                                    nPoles, samplingRate);
+            dataFilteredThis = filter(filtObj, dataRaw);
+            fprintf(['%s is band-pass filtered only', ...
+                     ' in one direction with fdesign!\n\n'], ...
+                     bandName{iBand});
+        end
+
+        % Save in cell array
+        dataFiltered{iBand} = dataFilteredThis;
+        
         % Save data
-        % dataFileName{iBand} = fullfile(outFolder, [fileBase,bandName{iBand},'.mat']);
+        % dataFileName{iBand} = fullfile(outFolder, [fileBase, bandName{iBand}, '.mat']);
         % save(dataFileName{iBand}, dataFileName{iBand} , '-v7.3');
     end  
 end
@@ -228,14 +256,28 @@ if crossCorrFlag
                                       'to', num2str(highCutoffs(iBand))];
 
             corrProf = ...
-                crosscorr_profile0818(dataFiltered{iBand}, dataRaw, samplingRate, ...
+                crosscorr_profile(dataFiltered{iBand}, dataRaw, samplingRate, ...
                                     outFolder, fileBaseCorr);
         end
     else
-        corrProf = crosscorr_profile0818(dataRaw, dataRaw, samplingRate, ...
+        corrProf = crosscorr_profile(dataRaw, dataRaw, samplingRate, ...
                                     outFolder, fileBase);
     end
-    
+end
+
+%% Phase analysis
+if bandpassFilterFlag && phaseAnalysisFlag
+    % Identify the theta phase data
+    dataTheta = dataFiltered{1};
+
+    % Identify the high frequency data
+    dataHighFreq = dataFiltered{3};
+
+    % Perform theta phase analysis
+    [phaseProf, phaseDist] = ...
+        theta_phase_analysis(dataTheta, dataHighFreq, ...
+                       samplingRate, troughThreshold, spikeThreshold, ...
+                       outFolder, fileBase);
 end
 
 %% Plot figures
@@ -283,5 +325,8 @@ cd(outFolder);
 
 samplingRate = 10000; % 1000            % sampling rate in Hz
 
-
+figTitles{iBand} = ['Data filtered ', ...
+                    num2str(lowCutoffs(iBand)), ...
+                    '~', num2str(highCutoffs(iBand)), ...
+                    ' Hz (', bandName{iBand}, ' band)'];
 %}

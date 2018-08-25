@@ -38,7 +38,7 @@ maxTime = max(timeVec);
 % Plot each channel as a different subplot
 for iPlot = 1:nChannels
     % Create a subplot
-    subplot(nChannels, 1, iPlot);
+    axes(iPlot) = subplot(nChannels, 1, iPlot);
   
     % Plot the signal against the time vector
     plot(timeVec, data(:, iPlot), 'Color', cm(iPlot, :));
@@ -47,7 +47,7 @@ for iPlot = 1:nChannels
     xlim([minTime, maxTime]);
 
     % Create a label for the Y axis
-    ylabel('EEG Amp (uV)');
+    ylabel('EEG Amp (mV)');
 
     % Create a title for the first subplot
     if iPlot == 1
@@ -59,3 +59,6 @@ for iPlot = 1:nChannels
         xlabel('Time (s)');
     end
 end
+
+% Link the x axes
+linkaxes(axes, 'x');
