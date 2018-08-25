@@ -1,7 +1,11 @@
 function corrProf = crosscorr_profile(data, dataRaw, samplingRate, outFolder, fileBase)
 %% data: each channel is a column
+% Used by:
+%   pwd/analyze_cobalt.m
 % Requires:
-%   sscanf_full.m
+%   pwd/sscanf_full.m
+% File History: 
+%   2018-08-25 Added dataRaw and lag profile
 
 %% Hard-coded parameters
 windowSizeSeconds = 4;              % window size in seconds
