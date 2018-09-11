@@ -6,6 +6,10 @@ function corrProf = crosscorr_profile(data, dataRaw, samplingRate, outFolder, fi
 %   pwd/sscanf_full.m
 % File History: 
 %   2018-08-25 Added dataRaw and lag profile
+%   2018-09-11 Fixed the order of i and j (now i must be less than j)
+%               so that the upper triangle is computed and used
+%               for the correlation profiles and lag profiles over time
+%   2018-09-11 Now only use windows that have complete size
 
 %% Hard-coded parameters
 windowSizeSeconds = 4;              % window size in seconds
@@ -33,7 +37,7 @@ windowSize = windowSizeSeconds * samplingRate;
 windowInterval = windowIntervalSeconds * samplingRate;
 
 % Determine the number of windows for the correlation profile
-nWindows = ceil(nSamples / windowInterval);
+nWindows = floor(nSamples / windowInterval);
 
 % Determine the number of pairs
 nPairs = nChannels * (nChannels - 1) / 2;
@@ -81,9 +85,8 @@ end
 indPairs = zeros(nPairs, 2);
 ct = 0;
 for i = 1:nChannels
-    % Only iterate up to current channel number because lower triangle of
-    % matrix is same as upper
-    for j = 1:i
+    % Only store index pairs from the upper right triangle
+    for j = i:nChannels
         if i ~= j
             % Increment the count
             ct = ct + 1;
@@ -168,14 +171,14 @@ cm = colormap(jet(nChannels - 1));
 h = figure;
 
 % iChannnel raw EEG plot
-ax1 = subplot(4, 1, 1);
+ax1 = subplot(4, 5, [1:4]);
 hold on
 plot(timeVector, dataRaw(:, iChannelToPlot));
 ylabel('Voltage (mV)')
 title(['EEG for channel ', num2str(iChannelToPlot)]);
 
 % iChannnel filtered EEG plot
-ax2 = subplot(4, 1, 2);
+ax2 = subplot(4, 5, [6:9]);
 hold on
 plot(timeVector, data(:, iChannelToPlot));
 ylabel('Voltage (mV)')
@@ -190,27 +193,28 @@ else
 end
         
 % Plot the correlation profiles of each pair of consecutive channels
-ax3 = subplot(4, 1, 3);
+legendTexts = cell(1, nChannels - 1);
+ax3 = subplot(4, 5, [11:14]);
 hold on
 for i = 1:(nChannels - 1)
     % Find the corresponding index in indPairs for the pair [i, i+1]
-    idxPair = find(firstOfPairs == i + 1 & secondOfPairs == i);
+    idxPair = find(firstOfPairs == i & secondOfPairs == i + 1);
     
     % Correlation profile plot
     corrLabel = ['ch', num2str(i), '-ch', num2str(i + 1)];
-    plot(timeWindows, corrProf{idxPair}, ...
-         'Color', cm(i, :), 'DisplayName', corrLabel);
+    legendTexts{i} = corrLabel;
+    forLegend(i) = plot(timeWindows, corrProf{idxPair}, ...
+                         'Color', cm(i, :), 'DisplayName', corrLabel);
 end
 ylabel('Correlation Coefficients')
-legend('location', 'best');
 title('Cross correlation profile');
 
 % Plot the time lag profiles of each pair of consecutive channels
-ax4 = subplot(4, 1, 4);
+ax4 = subplot(4, 5, [16:19]);
 hold on
 for i = 1:(nChannels - 1)
     % Find the corresponding index in indPairs for the pair [i, i+1]
-    idxPair = find(firstOfPairs == i + 1 & secondOfPairs == i);
+    idxPair = find(firstOfPairs == i & secondOfPairs == i + 1);
     
     % Correlation profile plot
     lagLabel = ['ch', num2str(i), '-ch', num2str(i + 1)];
@@ -219,11 +223,20 @@ for i = 1:(nChannels - 1)
 end
 xlabel('Time (seconds)')
 ylabel('Time lag (seconds)')
-legend('location', 'best');
 title('Time lag profile');
 
 % Link the x axes
 linkaxes([ax1, ax2, ax3, ax4], 'x');
+
+% Create a legend
+ax5 = subplot(4, 5, [15, 20], 'Visible', 'off');
+legendPosition = get(ax5, 'OuterPosition');
+legendPosition(1) = legendPosition(1) + 0.02;
+legend(forLegend, legendTexts, 'Position', legendPosition);
+% ax5 = subplot(4, 5, 15);
+% legend(forLegend1);
+% ax6 = subplot(4, 5, 20);
+% legend(forLegend2);
 
 % Set the x axis limits
 xlim([0, maxTime]);
@@ -360,5 +373,18 @@ if k * windowSize <= nSamples
 else
     idxEnd = nSamples;
 end
+
+idxPair = find(firstOfPairs == i + 1 & secondOfPairs == i);
+idxPair = find(firstOfPairs == i + 1 & secondOfPairs == i);
+
+% Only iterate up to current channel number because lower triangle of
+% matrix is same as upper
+for j = 1:i
+
+nWindows = ceil(nSamples / windowInterval);
+
+legend('location', 'best');
+legend('location', 'best');
+legend('location', 'eastoutside');
 
 %}

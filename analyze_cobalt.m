@@ -9,8 +9,8 @@ bandpassFilterFlag = true; %false;
 plotFilteredFlag = true; %false;
 signalAnalyzerFlag = false; %true;
 eeglabFlag = false; %true;
-crossCorrFlag = false; %true;
-phaseAnalysisFlag = true; %false;
+crossCorrFlag = true; %false
+phaseAnalysisFlag = false; %true
 
 %% Hard coded parameters
 nPoles = 4;                   	% order of the ButterWorth filter
@@ -27,9 +27,9 @@ channelsOfInterest = [13, 15, 17, 19];
 % lowCutoffs = [0, 0.1, 0.2, 0.3, 0.4] * samplingRate;
 % highCutoffs = [0.1, 0.2, 0.3, 0.4, 0.5] * samplingRate;
 % bandName = {'band1', 'band2', 'band3', 'band4', 'band5'};
-lowCutoffs = [4, 0, 300];
-highCutoffs = [10, 80, 4000];
-bandName = {'4to10', '0to80','300to4000'};
+lowCutoffs = [0]; %[4, 0, 300];
+highCutoffs = [80]; %[10, 80, 4000];
+bandName = {'0to80'}; %{'4to10', '0to80','300to4000'};
 
 %% Construct paths
 parentDir = 'C:\Users\Pinn Analysis\Desktop\Shinnosuke';
