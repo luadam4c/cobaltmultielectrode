@@ -1,5 +1,17 @@
-function corrProf = crosscorr_profile(data, dataRaw, samplingRate, outFolder, fileBase)
+function [corrCoeffs, corrProf, lagProf] = crosscorr_profile(data, dataRaw, samplingRate, outFolder, fileBase, varargin)
 %% data: each channel is a column
+% Usage: [corrCoeffs, corrProf, lagProf] = crosscorr_profile(data, dataRaw, samplingRate, outFolder, fileBase, varargin)
+%
+% Arguments:    
+%       varargin    - 'ComputeProfileFlag': whether to compute correlation profiles
+%                   must be numeric/logical 1 (true) or 0 (false)
+%                   default == true
+%                   - 'PlotProfileFlag': whether to plot correlation profiles
+%                   must be numeric/logical 1 (true) or 0 (false)
+%                   default == true
+%                   - 'PlotLagFlag': whether to plot lags
+%                   must be numeric/logical 1 (true) or 0 (false)
+%                   default == true
 % Used by:
 %   pwd/analyze_cobalt.m
 % Requires:
@@ -16,6 +28,38 @@ windowSizeSeconds = 4;              % window size in seconds
 windowIntervalSeconds = 0.5;        % window interval in seconds
 iChannelToPlot = 2;                 % the channel number to plot
 
+%% Default values for optional arguments
+computeProfileFlagDefault = true; % whether to compute correlation profiles by default
+plotProfileFlagDefault = true; % whether to plot correlation profiles by default
+plotLagFlagDefault = true;     % whether to plot time lags by default
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% Deal with arguments
+% Check number of required arguments
+if nargin < 5
+    error(['Not enough input arguments, ', ...
+            'type ''help %s'' for usage'], mfilename);
+end
+
+% Set up Input Parser Scheme
+iP = inputParser;
+iP.FunctionName = mfilename;
+
+% Add parameter-value pairs to the Input Parser
+addParameter(iP, 'ComputeProfileFlag', computeProfileFlagDefault, ...
+    @(x) validateattributes(x, {'logical', 'numeric'}, {'binary'}));
+addParameter(iP, 'PlotProfileFlag', plotProfileFlagDefault, ...
+    @(x) validateattributes(x, {'logical', 'numeric'}, {'binary'}));
+addParameter(iP, 'PlotLagFlag', plotLagFlagDefault, ...
+    @(x) validateattributes(x, {'logical', 'numeric'}, {'binary'}));
+
+% Read from the Input Parser
+parse(iP, varargin{:});
+computeProfileFlag = iP.Results.ComputeProfileFlag;
+plotProfileFlag = iP.Results.PlotProfileFlag;
+plotLagFlag = iP.Results.PlotLagFlag;
+
 %% Create an output folder for cross correlation figures
 figFolder = fullfile(outFolder, 'crosscorr');
 if exist(figFolder, 'dir') ~= 7
@@ -23,7 +67,6 @@ if exist(figFolder, 'dir') ~= 7
 end
 
 %% Preparation
-
 % Count the number of samples
 nSamples = size(data, 1);
 
@@ -79,7 +122,7 @@ else
     lowFreq = [];
     highFreq = [];    
 end
-    
+
 %% Filtered data cross correlation with corr2
 % Iterate over each channel
 indPairs = zeros(nPairs, 2);
@@ -100,218 +143,254 @@ end
 firstOfPairs = indPairs(:, 1);
 secondOfPairs = indPairs(:, 2);
 
-% Compute all correlation profiles over time with corr2 
-%   (treat all samples within a time window as independent)
-corrProf = cell(nPairs, 1);
+% Compute overall cross correlation coefficients with corr2
+corrCoeffsLinear = cell(nPairs, 1);
 parfor iPair = 1:nPairs
     % Get the indices in corrProf for this pair
     i = firstOfPairs(iPair);
     j = secondOfPairs(iPair);
     
-    % Initialize a cross correlation vector over time
-    corrThis = zeros(nWindows, 1);
+    % Calculate the cross-correlation coefficient for the
+    %   two channels over all
+    corrCoeffsLinear{iPair} = corr2(data(:, i), data(:, j));
+end
+corrCoeffs = ones(nChannels, nChannels);
+ct = 0;
+for i = 1:nChannels
+    for j = i:nChannels
+        if i ~= j
+            % Increment the count
+            ct = ct + 1;
 
-    for k = 1:nWindows
-        % Get the starting index of the time window
-        idxStart = (k - 1) * windowInterval + 1;
-
-        % Get the ending index of the time window
-        idxEnd = min(idxStart + windowSize - 1, nSamples);
-
-        % Calculate the cross-correlation coefficient for the
-        % two channels in this time window
-        corrThis(k) = corr2(data(idxStart:idxEnd, i), ...
-                            data(idxStart:idxEnd, j));
-
+            % Store the coefficients in the matrix
+            corrCoeffs(i, j) = corrCoeffsLinear{ct};
+            corrCoeffs(j, i) = corrCoeffsLinear{ct};
+        end
     end
-
-    % Store the correlation profile in the cell array
-    corrProf{iPair} = corrThis;
-    
 end
 
-% Compute all time lags over time with xcorr
-lagProf = cell(nPairs, 1);
-parfor iPair = 1:nPairs
-    % Get the indices in lagProf for this pair
-    i = firstOfPairs(iPair);
-    j = secondOfPairs(iPair);
-    
-    % Initialize a time lag vector over time
-    lagThis = zeros(nWindows, 1);
+if computeProfileFlag
+    % Compute all correlation profiles over time with corr2 
+    %   (treat all samples within a time window as independent)
+    corrProf = cell(nPairs, 1);
+    parfor iPair = 1:nPairs
+        % Get the indices in corrProf for this pair
+        i = firstOfPairs(iPair);
+        j = secondOfPairs(iPair);
+        
+        % Initialize a cross correlation vector over time
+        corrThis = zeros(nWindows, 1);
 
-    for k = 1:nWindows
-        % Get the starting index of the time window
-        idxStart = (k - 1) * windowInterval + 1;
+        for k = 1:nWindows
+            % Get the starting index of the time window
+            idxStart = (k - 1) * windowInterval + 1;
 
-        % Get the ending index of the time window
-        idxEnd = min(idxStart + windowSize - 1, nSamples);
+            % Get the ending index of the time window
+            idxEnd = min(idxStart + windowSize - 1, nSamples);
 
-        % Calculate the lags for the
-        % two channels in this time window
-        [acorAll, lagAll] = xcorr(data(idxStart:idxEnd, i), ...
-                                  data(idxStart:idxEnd, j));
+            % Calculate the cross-correlation coefficient for the
+            % two channels in this time window
+            corrThis(k) = corr2(data(idxStart:idxEnd, i), ...
+                                data(idxStart:idxEnd, j));
 
-        % Find the lag difference with the largest correlation
-        [~, I] = max(abs(acorAll));
-        lagDiff = lagAll(I);
+        end
 
-        % Compute the lag in seconds
-        lagThis(k) = lagDiff/samplingRate;
+        % Store the correlation profile in the cell array
+        corrProf{iPair} = corrThis;
+        
     end
 
-    % Store the correlation profile in the cell array
-    lagProf{iPair} = lagThis;
+    % Compute all time lags over time with xcorr
+    lagProf = cell(nPairs, 1);
+    parfor iPair = 1:nPairs
+        % Get the indices in lagProf for this pair
+        i = firstOfPairs(iPair);
+        j = secondOfPairs(iPair);
+        
+        % Initialize a time lag vector over time
+        lagThis = zeros(nWindows, 1);
+
+        for k = 1:nWindows
+            % Get the starting index of the time window
+            idxStart = (k - 1) * windowInterval + 1;
+
+            % Get the ending index of the time window
+            idxEnd = min(idxStart + windowSize - 1, nSamples);
+
+            % Calculate the lags for the
+            % two channels in this time window
+            [acorAll, lagAll] = xcorr(data(idxStart:idxEnd, i), ...
+                                      data(idxStart:idxEnd, j));
+
+            % Find the lag difference with the largest correlation
+            [~, I] = max(abs(acorAll));
+            lagDiff = lagAll(I);
+
+            % Compute the lag in seconds
+            lagThis(k) = lagDiff/samplingRate;
+        end
+
+        % Store the correlation profile in the cell array
+        lagProf{iPair} = lagThis;
+    end
+else
+    corrProf = [];
+    lagProf = [];
 end
 
 % Decide on the colormap
 cm = colormap(jet(nChannels - 1));
 
-% Plot EEG and correlation coefficient
-h = figure;
-
-% iChannnel raw EEG plot
-ax1 = subplot(4, 5, [1:4]);
-hold on
-plot(timeVector, dataRaw(:, iChannelToPlot));
-ylabel('Voltage (mV)')
-title(['EEG for channel ', num2str(iChannelToPlot)]);
-
-% iChannnel filtered EEG plot
-ax2 = subplot(4, 5, [6:9]);
-hold on
-plot(timeVector, data(:, iChannelToPlot));
-ylabel('Voltage (mV)')
-if ~isempty(lowFreq) && ~isempty(highFreq)
-    title(['Filtered EEG (', num2str(lowFreq), ' ~ ', ...
-            num2str(highFreq), ' Hz) for channel ', num2str(iChannelToPlot)]);
-elseif ~isempty(lowFreq)
-    title(['Filtered EEG (', num2str(lowFreq), ' Hz) for channel ', ...
-            num2str(iChannelToPlot)]);
-else
-    title(['Raw EEG for channel ', num2str(iChannelToPlot)]);
-end
-        
-% Plot the correlation profiles of each pair of consecutive channels
-legendTexts = cell(1, nChannels - 1);
-ax3 = subplot(4, 5, [11:14]);
-hold on
-for i = 1:(nChannels - 1)
-    % Find the corresponding index in indPairs for the pair [i, i+1]
-    idxPair = find(firstOfPairs == i & secondOfPairs == i + 1);
-    
-    % Correlation profile plot
-    corrLabel = ['ch', num2str(i), '-ch', num2str(i + 1)];
-    legendTexts{i} = corrLabel;
-    forLegend(i) = plot(timeWindows, corrProf{idxPair}, ...
-                         'Color', cm(i, :), 'DisplayName', corrLabel);
-end
-ylabel('Correlation Coefficients')
-title('Cross correlation profile');
-
-% Plot the time lag profiles of each pair of consecutive channels
-ax4 = subplot(4, 5, [16:19]);
-hold on
-for i = 1:(nChannels - 1)
-    % Find the corresponding index in indPairs for the pair [i, i+1]
-    idxPair = find(firstOfPairs == i & secondOfPairs == i + 1);
-    
-    % Correlation profile plot
-    lagLabel = ['ch', num2str(i), '-ch', num2str(i + 1)];
-    plot(timeWindows, lagProf{idxPair}, ...
-         'Color', cm(i, :), 'DisplayName', lagLabel);
-end
-xlabel('Time (seconds)')
-ylabel('Time lag (seconds)')
-title('Time lag profile');
-
-% Link the x axes
-linkaxes([ax1, ax2, ax3, ax4], 'x');
-
-% Create a legend
-ax5 = subplot(4, 5, [15, 20], 'Visible', 'off');
-legendPosition = get(ax5, 'OuterPosition');
-legendPosition(1) = legendPosition(1) + 0.02;
-legend(forLegend, legendTexts, 'Position', legendPosition);
-% ax5 = subplot(4, 5, 15);
-% legend(forLegend1);
-% ax6 = subplot(4, 5, 20);
-% legend(forLegend2);
-
-% Set the x axis limits
-xlim([0, maxTime]);
-
-% Create an overarching title
-if ~isempty(mouseNumber)
-    suplabel(['Mouse #', num2str(mouseNumber)], 't');
-end
-   
-% Save the figure
-figname = fullfile(figFolder, [fileBase, '_corrprofile']);
-saveas(h, figname, 'jpg');
-
-%% Filtered data cross correlation with xcorr
-for i = 1:(nChannels-1)
-    % Only iterate up to current channel number because lower triangle of
-    % matrix is same as upper
-    [acorAll, lagAll] = xcorr(data(:, i), data(:, i+1));
-
-    % Find the lag difference with the largest correlation
-    [~, I] = max(abs(acorAll));
-    lagDiff = lagAll(I);
-    
-    % Compute the lag in seconds
-    timeDiff = lagDiff/samplingRate;
-
-    % Create a figure
+if plotProfileFlag
+    % Plot EEG and correlation coefficient
     h = figure;
 
-    % Plot the the cross correlation
-    corrLabel = ['ch', num2str(i), '-ch', num2str(i+1)];
-    plot(lagAll, acorAll, 'Color', cm(i, :), 'DisplayName', corrLabel);
+    % iChannnel raw EEG plot
+    ax1 = subplot(4, 5, [1:4]);
+    hold on
+    plot(timeVector, dataRaw(:, iChannelToPlot));
+    ylabel('Voltage (mV)')
+    title(['EEG for channel ', num2str(iChannelToPlot)]);
 
-    % Mark the lagDiff
-    a3 = gca;
-    a3.XTick = unique([a3.XTick, lagDiff]);
+    % iChannnel filtered EEG plot
+    ax2 = subplot(4, 5, [6:9]);
+    hold on
+    plot(timeVector, data(:, iChannelToPlot));
+    ylabel('Voltage (mV)')
+    if ~isempty(lowFreq) && ~isempty(highFreq)
+        title(['Filtered EEG (', num2str(lowFreq), ' ~ ', ...
+                num2str(highFreq), ' Hz) for channel ', num2str(iChannelToPlot)]);
+    elseif ~isempty(lowFreq)
+        title(['Filtered EEG (', num2str(lowFreq), ' Hz) for channel ', ...
+                num2str(iChannelToPlot)]);
+    else
+        title(['Raw EEG for channel ', num2str(iChannelToPlot)]);
+    end
+            
+    % Plot the correlation profiles of each pair of consecutive channels
+    legendTexts = cell(1, nChannels - 1);
+    ax3 = subplot(4, 5, [11:14]);
+    hold on
+    for i = 1:(nChannels - 1)
+        % Find the corresponding index in indPairs for the pair [i, i+1]
+        idxPair = find(firstOfPairs == i & secondOfPairs == i + 1);
+        
+        % Correlation profile plot
+        corrLabel = ['ch', num2str(i), '-ch', num2str(i + 1)];
+        legendTexts{i} = corrLabel;
+        forLegend(i) = plot(timeWindows, corrProf{idxPair}, ...
+                             'Color', cm(i, :), 'DisplayName', corrLabel);
+    end
+    ylabel('Correlation Coefficients')
+    title('Cross correlation profile');
 
-    % Create a text for the lagDiff
-    diffSampl = ['lagDiff = ', num2str(lagDiff), ' samples'];
-    text(0.55, 0.55, diffSampl, 'Units', 'normalized');
+    % Plot the time lag profiles of each pair of consecutive channels
+    ax4 = subplot(4, 5, [16:19]);
+    hold on
+    for i = 1:(nChannels - 1)
+        % Find the corresponding index in indPairs for the pair [i, i+1]
+        idxPair = find(firstOfPairs == i & secondOfPairs == i + 1);
+        
+        % Correlation profile plot
+        lagLabel = ['ch', num2str(i), '-ch', num2str(i + 1)];
+        plot(timeWindows, lagProf{idxPair}, ...
+             'Color', cm(i, :), 'DisplayName', lagLabel);
+    end
+    xlabel('Time (seconds)')
+    ylabel('Time lag (seconds)')
+    title('Time lag profile');
+
+    % Link the x axes
+    linkaxes([ax1, ax2, ax3, ax4], 'x');
 
     % Create a legend
-    legend('location', 'northeast');
-    
-    % Create an x label
-    xlabel('Lag (samples)')
-    
-    % Create a y label
-    ylabel('Correlation')
-    
-    % Create a title
-    title(['Cross correlation between channel ', num2str(i), ...
-            ' and channel ', num2str(i+1)]);
-        
-    % Save the figure
-    figname = fullfile(figFolder, [fileBase, '_', corrLabel]);
-    saveas(h, figname, 'jpg');
-    
-    % Plot the correlation profiles of 'xcorr'
-    %ax4 = subplot(4, 1, 4);
-    %hold on
+    ax5 = subplot(4, 5, [15, 20], 'Visible', 'off');
+    legendPosition = get(ax5, 'OuterPosition');
+    legendPosition(1) = legendPosition(1) + 0.02;
+    legend(forLegend, legendTexts, 'Position', legendPosition);
+    % ax5 = subplot(4, 5, 15);
+    % legend(forLegend1);
+    % ax6 = subplot(4, 5, 20);
+    % legend(forLegend2);
 
-    % Find the corresponding index in indPairs for the pair [i, i+1]
-    %idxPair = find(firstOfPairs == i + 1 & secondOfPairs == i);
-    
-    % Correlation profile plot
-    %corrLabel = ['ch', num2str(i), '-ch', num2str(i + 1)];
-    %plot(timeWindows, xcorrProf{idxPair}, ...
-    %     'Color', cm(i, :), 'DisplayName', corrLabel);
-    %legend('location', 'northeast');
-    %xlabel('Time (seconds)')
-    %ylabel('xcorr Correlation Coefficients')
-    
+    % Set the x axis limits
+    xlim([0, maxTime]);
+
+    % Create an overarching title
+    if ~isempty(mouseNumber)
+        suplabel(['Mouse #', num2str(mouseNumber)], 't');
+    end
+       
+    % Save the figure
+    figname = fullfile(figFolder, [fileBase, '_corrprofile']);
+    saveas(h, figname, 'jpg');
 end
+
+%% Filtered data cross correlation with xcorr
+if plotLagFlag
+    for i = 1:(nChannels-1)
+        % Only iterate up to current channel number because lower triangle of
+        % matrix is same as upper
+        [acorAll, lagAll] = xcorr(data(:, i), data(:, i+1));
+
+        % Find the lag difference with the largest correlation
+        [~, I] = max(abs(acorAll));
+        lagDiff = lagAll(I);
+        
+        % Compute the lag in seconds
+        timeDiff = lagDiff/samplingRate;
+
+        % Create a figure
+        h = figure;
+
+        % Plot the the cross correlation
+        corrLabel = ['ch', num2str(i), '-ch', num2str(i+1)];
+        plot(lagAll, acorAll, 'Color', cm(i, :), 'DisplayName', corrLabel);
+
+        % Mark the lagDiff
+        a3 = gca;
+        a3.XTick = unique([a3.XTick, lagDiff]);
+
+        % Create a text for the lagDiff
+        diffSampl = ['lagDiff = ', num2str(lagDiff), ' samples'];
+        text(0.55, 0.55, diffSampl, 'Units', 'normalized');
+
+        % Create a legend
+        legend('location', 'northeast');
+        
+        % Create an x label
+        xlabel('Lag (samples)')
+        
+        % Create a y label
+        ylabel('Correlation')
+        
+        % Create a title
+        title(['Cross correlation between channel ', num2str(i), ...
+                ' and channel ', num2str(i+1)]);
+            
+        % Save the figure
+        figname = fullfile(figFolder, [fileBase, '_', corrLabel]);
+        saveas(h, figname, 'jpg');
+        
+        % Plot the correlation profiles of 'xcorr'
+        %ax4 = subplot(4, 1, 4);
+        %hold on
+
+        % Find the corresponding index in indPairs for the pair [i, i+1]
+        %idxPair = find(firstOfPairs == i + 1 & secondOfPairs == i);
+        
+        % Correlation profile plot
+        %corrLabel = ['ch', num2str(i), '-ch', num2str(i + 1)];
+        %plot(timeWindows, xcorrProf{idxPair}, ...
+        %     'Color', cm(i, :), 'DisplayName', corrLabel);
+        %legend('location', 'northeast');
+        %xlabel('Time (seconds)')
+        %ylabel('xcorr Correlation Coefficients')
+        
+    end
 end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %{
 OLD CODE:

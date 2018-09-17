@@ -6,10 +6,13 @@ close all force hidden
 dataType = 'mat'; %'rhd';
 plotRawFlag = false; %true;
 bandpassFilterFlag = true; %false;
-plotFilteredFlag = true; %false;
+plotFilteredFlag = false;
 signalAnalyzerFlag = false; %true;
 eeglabFlag = false; %true;
 crossCorrFlag = true; %false
+computeCorrProfileFlag = true;
+plotCorrProfileFlag = true;
+plotLagFlag = false; %true;
 phaseAnalysisFlag = false; %true
 
 %% Hard coded parameters
@@ -28,8 +31,8 @@ channelsOfInterest = [13, 15, 17, 19];
 % highCutoffs = [0.1, 0.2, 0.3, 0.4, 0.5] * samplingRate;
 % bandName = {'band1', 'band2', 'band3', 'band4', 'band5'};
 lowCutoffs = [0]; %[4, 0, 300];
-highCutoffs = [80]; %[10, 80, 4000];
-bandName = {'0to80'}; %{'4to10', '0to80','300to4000'};
+highCutoffs = [300]; %[10, 80, 4000];
+bandName = {'1to300'}; %{'4to10', '0to80','300to4000'};
 
 %% Construct paths
 parentDir = 'C:\Users\Pinn Analysis\Desktop\Shinnosuke';
@@ -255,13 +258,21 @@ if crossCorrFlag
             fileBaseCorr = [fileBase, ' band', num2str(lowCutoffs(iBand)), ...
                                       'to', num2str(highCutoffs(iBand))];
 
-            corrProf = ...
+            [corrCoeffs, corrProf, lagProf] = ...
                 crosscorr_profile(dataFiltered{iBand}, dataRaw, samplingRate, ...
-                                    outFolder, fileBaseCorr);
+                                    outFolder, fileBaseCorr, ...
+                                    'ComputeProfileFlag', computeCorrProfileFlag, ...
+                                    'PlotProfileFlag', plotCorrProfileFlag, ...
+                                    'PlotLagFlag', plotLagFlag);
         end
     else
-        corrProf = crosscorr_profile(dataRaw, dataRaw, samplingRate, ...
-                                    outFolder, fileBase);
+        [corrCoeffs, corrProf, lagProf] = ...
+            crosscorr_profile(dataRaw, dataRaw, samplingRate, ...
+                                outFolder, fileBase, ...
+                                'ComputeProfileFlag', computeCorrProfileFlag, ...
+                                'PlotProfileFlag', plotCorrProfileFlag, ...
+                                'PlotLagFlag', plotLagFlag);
+
     end
 end
 
